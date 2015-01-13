@@ -176,6 +176,7 @@ type OptionsConfiguration struct {
 	ProgressUpdateIntervalS int      `xml:"progressUpdateIntervalS" json:"progressUpdateIntervalS" default:"5"`
 	SymlinksEnabled         bool     `xml:"symlinksEnabled" json:"symlinksEnabled" default:"true"`
 	LimitBandwidthInLan     bool     `xml:"limitBandwidthInLan" json:"limitBandwidthInLan" default:"false"`
+	DisabledFeatures        []string `xml:"disabledFeature" json:"disabledFeatures"`
 
 	Deprecated_RescanIntervalS int    `xml:"rescanIntervalS,omitempty" json:"-"`
 	Deprecated_UREnabled       bool   `xml:"urEnabled,omitempty" json:"-"`
@@ -377,6 +378,7 @@ func (cfg *Configuration) prepare(myID protocol.DeviceID) {
 
 	cfg.Options.ListenAddress = uniqueStrings(cfg.Options.ListenAddress)
 	cfg.Options.GlobalAnnServers = uniqueStrings(cfg.Options.GlobalAnnServers)
+	cfg.Options.DisabledFeatures = uniqueStrings(cfg.Options.DisabledFeatures)
 
 	if cfg.GUI.APIKey == "" {
 		cfg.GUI.APIKey = randomString(32)
