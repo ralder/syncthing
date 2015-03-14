@@ -1106,43 +1106,31 @@ angular.module('syncthing.core')
                             animation: 0,
                             data: function (node, callback) {
                                 var parentID = node.id,
-                                    parentName = node.text;
+                                    parentName = node.text,
+                                    url = urlbase + '/tree?dirsonly=1&folder=' + encodeURIComponent($scope.currentFolder.ID),
+                                    levels = 1;
+
                                 if (parentID == "#") {
                                     parentID = "";
                                     parentName = $scope.currentFolder.ID;
+                                } else {
+                                    url += "&prefix=" + encodeURIComponent(parentID.substring(1));
                                 }
-                                $http.get(urlbase + '/tree?dirsonly=1&levels=1&folder=' + encodeURIComponent($scope.currentFolder.ID) + '&prefix=' + encodeURIComponent(parentID.substring(1))
+
+                                // If it's a previous selection, load the whole subtree.
+                                $.each(selections, function (idx, selection) {
+                                    if (parentID != "" && selection.indexOf(parentID) > -1) {
+                                        var selectionLevels = selection.substring(1).split('/').length
+                                        levels = selectionLevels > levels ? selectionLevels : levels;
+                                    }
+                                });
+
+                                url += "&levels=" + levels;
+
+                                $http.get(url)
                                     .success(function (data) {
-                                        if (Object.keys(data).length == 0) {
-                                            callback([]);
-                                            return;
-                                        }
-
-                                        var id = parentID + "/*",
-                                            children = [];
-
-                                        children.push({
-                                            id: id,
-                                            text: 'Files in "' + parentName + '"',
-                                            icon: "glyphicon glyphicon-file",
-                                            state: {
-                                                selected: selections.indexOf(id) > -1
-                                            }
-                                        });
-
-                                        $.each(data, function (key, value) {
-                                            id = parentID + "/" + key;
-                                            children.push({
-                                                id: id,
-                                                text: key,
-                                                icon: "glyphicon glyphicon-folder-open",
-                                                children: Object.keys(value).length > 0,
-                                                state: {
-                                                    selected: selections.indexOf(id) > -1
-                                                }
-                                            });
-                                        });
-                                        callback(children);
+                                        data = buildDirectoryChildren(parentID, parentName, data, levels, selections);
+                                        callback(data);
                                     });
                             }
                         },
@@ -1170,7 +1158,7 @@ angular.module('syncthing.core')
                            off N requests for every leaf, where N is the depth
                            the leaf is in, given two leafs do not have the same
                            parent. If a whole subtree is selected, we stop at
-                           the top of the subtree,
+                           the top of the subtree.
                         */
                         var tree = $('#selectiveSyncTree').jstree(true),
                             promises = [],
@@ -1193,8 +1181,14 @@ angular.module('syncthing.core')
                             };
 
                         $.each(selections, function (idx, selection) {
-                            var parts = selection.substring(1).split('/').reverse();
-                            promises.push(loadLeaf("/" + parts.pop(), parts));
+                            var selectionRoot = "/" + selection.substring(1).split('/').reverse().pop(),
+                                later = $q.defer();
+
+                            tree.load_node(tree.get_node(selectionRoot), function() {
+                                later.resolve();
+                            });
+
+                            promises.push(later.promise);
                         });
 
                         $q.all(promises).then(function () {

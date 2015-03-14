@@ -155,25 +155,32 @@ function debounce(func, wait) {
 }
 
 
-function buildDirectoryChildren(parent, key, data, selections, levels) {
+function buildDirectoryChildren(parent, key, data, levels, selections) {
     if (Object.keys(data).length == 0)
         return [];
 
-    var children = [];
+    var children = [],
+        id = parent + "/*";
 
     children.push({
-        id: parent + "/*",
+        id: id,
         text: 'Files in "' + key + '"',
         icon: "glyphicon glyphicon-file",
+        state: {
+            selected: selections.indexOf(id) > -1
+        }
     });
 
     return children.concat($.map(data, function (value, key) {
-        var id = parent + "/" + key;
+        id = parent + "/" + key;
         return {
             id: id,
             text: key,
             icon: "glyphicon glyphicon-folder-open",
-            children: levels == 1 ? Object.keys(value).length > 0 : buildDirectoryChildren(id, key, value, levels-1)
+            children: levels == 1 ? Object.keys(value).length > 0 : buildDirectoryChildren(id, key, value, levels-1, selections),
+            state: {
+                selected: selections.indexOf(id) > -1
+            }
         };
     }));
 }
