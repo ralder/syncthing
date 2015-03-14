@@ -53,17 +53,19 @@ type Configuration struct {
 }
 
 type FolderConfiguration struct {
-	ID              string                      `xml:"id,attr"`
-	Path            string                      `xml:"path,attr"`
-	Devices         []FolderDeviceConfiguration `xml:"device"`
-	ReadOnly        bool                        `xml:"ro,attr"`
-	RescanIntervalS int                         `xml:"rescanIntervalS,attr" default:"60"`
-	IgnorePerms     bool                        `xml:"ignorePerms,attr"`
-	Versioning      VersioningConfiguration     `xml:"versioning"`
-	LenientMtimes   bool                        `xml:"lenientMtimes"`
-	Copiers         int                         `xml:"copiers" default:"1"`  // This defines how many files are handled concurrently.
-	Pullers         int                         `xml:"pullers" default:"16"` // Defines how many blocks are fetched at the same time, possibly between separate copier routines.
-	Hashers         int                         `xml:"hashers" default:"0"`  // Less than one sets the value to the number of cores. These are CPU bound due to hashing.
+	ID                string                      `xml:"id,attr"`
+	Path              string                      `xml:"path,attr"`
+	Devices           []FolderDeviceConfiguration `xml:"device"`
+	ReadOnly          bool                        `xml:"ro,attr"`
+	RescanIntervalS   int                         `xml:"rescanIntervalS,attr" default:"60"`
+	IgnorePerms       bool                        `xml:"ignorePerms,attr"`
+	Versioning        VersioningConfiguration     `xml:"versioning"`
+	LenientMtimes     bool                        `xml:"lenientMtimes"`
+	Copiers           int                         `xml:"copiers" default:"1"`  // This defines how many files are handled concurrently.
+	Pullers           int                         `xml:"pullers" default:"16"` // Defines how many blocks are fetched at the same time, possibly between separate copier routines.
+	Hashers           int                         `xml:"hashers" default:"0"`  // Less than one sets the value to the number of cores. These are CPU bound due to hashing.
+	SelectiveEnabled  bool                        `xml:"selectiveEnabled"`
+	SelectivePatterns []string                    `xml:"selectivePatterns"`
 
 	Invalid string `xml:"-"` // Set at runtime when there is an error, not saved
 

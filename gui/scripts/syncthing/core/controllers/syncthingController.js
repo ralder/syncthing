@@ -1,5 +1,5 @@
 angular.module('syncthing.core')
-    .controller('SyncthingController', function ($scope, $http, $location, LocaleService) {
+    .controller('SyncthingController', function ($scope, $http, $location, $q, LocaleService) {
         'use strict';
 
         // private/helper definitions
@@ -36,6 +36,7 @@ angular.module('syncthing.core')
         $scope.deviceStats = {};
         $scope.folderStats = {};
         $scope.progress = {};
+        $scope.folderTree = [];
 
         $(window).bind('beforeunload', function () {
             navigatingAway = true;
@@ -918,6 +919,7 @@ angular.module('syncthing.core')
             if (typeof $scope.currentFolder.staggeredMaxAge === 'undefined') {
                 $scope.currentFolder.staggeredMaxAge = 365;
             }
+            $scope.currentFolder.selectiveSyncEnabled = false;
 
             $scope.editingExisting = true;
             $scope.folderEditor.$setPristine();
@@ -934,6 +936,7 @@ angular.module('syncthing.core')
             $scope.currentFolder.staggeredMaxAge = 365;
             $scope.currentFolder.staggeredCleanInterval = 3600;
             $scope.currentFolder.staggeredVersionsPath = "";
+            $scope.currentFolder.selectiveSyncEnabled = false;
             $scope.editingExisting = false;
             $scope.folderEditor.$setPristine();
             $('#editFolder').modal();
@@ -953,6 +956,7 @@ angular.module('syncthing.core')
             $scope.currentFolder.staggeredMaxAge = 365;
             $scope.currentFolder.staggeredCleanInterval = 3600;
             $scope.currentFolder.staggeredVersionsPath = "";
+            $scope.currentFolder.selectiveSyncEnabled = false;
             $scope.editingExisting = false;
             $scope.folderEditor.$setPristine();
             $('#editFolder').modal();
@@ -1085,6 +1089,133 @@ angular.module('syncthing.core')
                 .then(function () {
                     $('#editIgnoresButton').removeAttr('disabled');
                 });
+        };
+
+        $scope.selectiveSync = function () {
+            if (!$scope.editingExisting) {
+                return;
+            }
+
+            $('#selectiveSyncButton').attr('disabled', 'disabled');
+
+            $http.get(urlbase + '/selections?folder=' + encodeURIComponent($scope.currentFolder.ID))
+                .success(function (selections) {
+                    $('#selectiveSyncTree').jstree({
+                        plugins: ["checkbox"],
+                        core: {
+                            animation: 0,
+                            data: function (node, callback) {
+                                var parentID = node.id,
+                                    parentName = node.text;
+                                if (parentID == "#") {
+                                    parentID = "";
+                                    parentName = $scope.currentFolder.ID;
+                                }
+                                $http.get(urlbase + '/tree?dirsonly=1&levels=1&folder=' + encodeURIComponent($scope.currentFolder.ID) + '&prefix=' + encodeURIComponent(parentID.substring(1))
+                                    .success(function (data) {
+                                        if (Object.keys(data).length == 0) {
+                                            callback([]);
+                                            return;
+                                        }
+
+                                        var id = parentID + "/*",
+                                            children = [];
+
+                                        children.push({
+                                            id: id,
+                                            text: 'Files in "' + parentName + '"',
+                                            icon: "glyphicon glyphicon-file",
+                                            state: {
+                                                selected: selections.indexOf(id) > -1
+                                            }
+                                        });
+
+                                        $.each(data, function (key, value) {
+                                            id = parentID + "/" + key;
+                                            children.push({
+                                                id: id,
+                                                text: key,
+                                                icon: "glyphicon glyphicon-folder-open",
+                                                children: Object.keys(value).length > 0,
+                                                state: {
+                                                    selected: selections.indexOf(id) > -1
+                                                }
+                                            });
+                                        });
+                                        callback(children);
+                                    });
+                            }
+                        },
+                        checkbox: {
+                            keep_selected_style: false
+                        },
+                    }).on('ready.jstree', function () {
+                        /* This is quite complicated, so bare with me.
+
+                           The way jsTree puts parent nodes into the 3rd checkbox
+                           state is by checking the children.
+                           Now because we load 1 level at a time, the children
+                           are not loaded, hence making the parents look like there
+                           are no selections made depper down, which is not what
+                           we want.
+
+                           Because we know the selections, we can manually
+                           load the relevant parent nodes down to where the children
+                           are causing the checkboxes to get to the correct state.
+
+                           Also, we cannot do stuff in parallel, because we need
+                           to load the parent before we can load the child.
+
+                           The problem with this though, is that we have to fire
+                           off N requests for every leaf, where N is the depth
+                           the leaf is in, given two leafs do not have the same
+                           parent. If a whole subtree is selected, we stop at
+                           the top of the subtree,
+                        */
+                        var tree = $('#selectiveSyncTree').jstree(true),
+                            promises = [],
+                            loadLeaf = function(node, parts) {
+                                var later = $q.defer();
+
+                                tree.load_node(tree.get_node(node), function() {
+                                    var next = parts.pop();
+                                    if (!next || next == "*") {
+                                        later.resolve();
+                                        return;
+                                    }
+
+                                    loadLeaf(node + "/" + next, parts).then(function () {
+                                        later.resolve();
+                                    })
+                                });
+
+                                return later.promise;
+                            };
+
+                        $.each(selections, function (idx, selection) {
+                            var parts = selection.substring(1).split('/').reverse();
+                            promises.push(loadLeaf("/" + parts.pop(), parts));
+                        });
+
+                        $q.all(promises).then(function () {
+                            $('#selectiveSyncButton').removeAttr('disabled');
+                            $('#editFolder').modal('hide');
+                            $('#selectiveSync').modal()
+                                .on('hidden.bs.modal', function () {
+                                    $('#editFolder').modal();
+                                    $('#selectiveSyncTree').jstree('destroy');
+                                });
+                        });
+                    });
+                }).error(function () {
+                    $('#selectiveSyncButton').removeAttr('disabled');
+                });
+        };
+
+        $scope.saveSelectiveSync = function (remove) {
+            remove = remove ? "&remove=1" : "";
+            var selections = $('#selectiveSyncTree').jstree('get_top_selected');
+            $http.post(urlbase + '/selections?folder=' + encodeURIComponent($scope.currentFolder.ID) + remove, selections);
         };
 
         $scope.saveIgnores = function () {

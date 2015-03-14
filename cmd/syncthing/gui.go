@@ -131,6 +131,7 @@ func startGUI(cfg config.GUIConfiguration, assetDir string, m *model.Model) erro
 	getRestMux.HandleFunc("/rest/upgrade", restGetUpgrade)
 	getRestMux.HandleFunc("/rest/version", restGetVersion)
 	getRestMux.HandleFunc("/rest/tree", withModel(m, restGetTree))
+	getRestMux.HandleFunc("/rest/selections", withModel(m, restGetSelections))
 	getRestMux.HandleFunc("/rest/stats/device", withModel(m, restGetDeviceStats))
 	getRestMux.HandleFunc("/rest/stats/folder", withModel(m, restGetFolderStats))
 
@@ -152,6 +153,7 @@ func startGUI(cfg config.GUIConfiguration, assetDir string, m *model.Model) erro
 	postRestMux.HandleFunc("/rest/upgrade", restPostUpgrade)
 	postRestMux.HandleFunc("/rest/scan", withModel(m, restPostScan))
 	postRestMux.HandleFunc("/rest/bump", withModel(m, restPostBump))
+	postRestMux.HandleFunc("/rest/selections", withModel(m, restPostSelections))
 
 	// A handler that splits requests between the two above and disables
 	// caching
@@ -730,6 +732,32 @@ func restGetPeerCompletion(m *model.Model, w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(comp)
+}
+
+var cache []string = []string{}
+
+func restGetSelections(m *model.Model, w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(cache)
+}
+
+func restPostSelections(m *model.Model, w http.ResponseWriter, r *http.Request) {
+	qs := r.URL.Query()
+
+	var data []string
+	err := json.NewDecoder(r.Body).Decode(&data)
+	r.Body.Close()
+
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	cache = data
+
+	fmt.Println("Selections:", data, qs.Get("folder"))
+
+	restGetSelections(m, w, r)
 }
 
 func restGetAutocompleteDirectory(w http.ResponseWriter, r *http.Request) {
