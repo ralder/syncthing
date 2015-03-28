@@ -1104,7 +1104,10 @@ func (m *Model) ScanFolders() map[string]error {
 				errorsMut.Lock()
 				errors[folder] = err
 				errorsMut.Unlock()
-				m.cfg.InvalidateFolder(folder, err.Error())
+				// Potentially sets the error twice, once in the scanner just
+				// by doing a check, and once here, if the error returned is
+				// the same one as returned by FolderError.
+				m.cfg.SetFolderError(folder, err.Error())
 			}
 			wg.Done()
 		}()
@@ -1166,9 +1169,11 @@ func (m *Model) ScanFolderSub(folder, sub string) error {
 	}
 
 	runner.setState(FolderScanning)
+	defer runner.setState(FolderIdle)
 	fchan, err := w.Walk()
 
 	if err != nil {
+		m.cfg.SetFolderError(folder, err.Error())
 		return err
 	}
 	batchSize := 100
@@ -1182,12 +1187,22 @@ func (m *Model) ScanFolderSub(folder, sub string) error {
 			"size":     f.Size(),
 		})
 		if len(batch) == batchSize {
+			if err := m.FolderError(folder); err != "" {
+				msg := fmt.Sprintf("Stopping folder %s mid-scan due to folder error: %s", folder, err)
+				l.Infoln(msg)
+				return errors.New(msg)
+			}
 			fs.Update(protocol.LocalDeviceID, batch)
 			batch = batch[:0]
 		}
 		batch = append(batch, f)
 	}
-	if len(batch) > 0 {
+
+	if err := m.FolderError(folder); err != "" {
+		msg := fmt.Sprintf("Stopping folder %s mid-scan due to folder error: %s", folder, err)
+		l.Infoln(msg)
+		return errors.New(msg)
+	} else if len(batch) > 0 {
 		fs.Update(protocol.LocalDeviceID, batch)
 	}
 
@@ -1265,7 +1280,6 @@ func (m *Model) ScanFolderSub(folder, sub string) error {
 		fs.Update(protocol.LocalDeviceID, batch)
 	}
 
-	runner.setState(FolderIdle)
 	return nil
 }
 
@@ -1487,6 +1501,71 @@ func (m *Model) BringToFront(folder, file string) {
 	if ok {
 		runner.BringToFront(file)
 	}
+}
+
+// Returns current folder error, or an empty string if there isn't an error.
+func (m *Model) FolderError(id string) string {
+	folder, ok := m.cfg.Folders()[id]
+	if !ok {
+		return "Folder does not exist"
+	}
+
+	fi, err := os.Stat(folder.Path)
+	if m.CurrentLocalVersion(id) > 0 {
+		// Safety check. If the cached index contains files but the
+		// folder doesn't exist, we have a problem. We would assume
+		// that all files have been deleted which might not be the case,
+		// so mark it as invalid instead.
+		if err != nil || !fi.IsDir() {
+			err = errors.New("Folder path missing")
+		} else if !folder.HasMarker() {
+			err = errors.New("Folder marker missing")
+		}
+	} else if os.IsNotExist(err) {
+		// If we don't have any files in the index, and the directory
+		// doesn't exist, try creating it.
+		err = os.MkdirAll(folder.Path, 0700)
+		if err == nil {
+			err = folder.CreateMarker()
+		}
+	} else if !folder.HasMarker() {
+		// If we don't have any files in the index, and the path does exist
+		// but the marker is not there, create it.
+		err = folder.CreateMarker()
+	}
+
+	if err == nil {
+		if folder.Invalid != "" {
+			l.Infof("Starting folder %q after error %q", folder.ID, folder.Invalid)
+			m.cfg.SetFolderError(id, "")
+		}
+
+		if folder, ok := m.cfg.Folders()[id]; !ok || folder.Invalid != "" {
+			panic("Unable to unset folder \"" + id + "\" error.")
+		}
+
+		return ""
+	}
+
+	if folder.Invalid == err.Error() {
+		return folder.Invalid
+	}
+
+	// folder is a copy of the original struct, hence Invalid value is
+	// preserved after the set.
+	m.cfg.SetFolderError(id, err.Error())
+
+	if folder.Invalid == "" {
+		l.Warnf("Stopping folder %q - %v", folder.ID, err.Error())
+	} else {
+		l.Infof("Folder %q error changed: %q -> %q", folder.ID, folder.Invalid, err.Error())
+	}
+
+	if folder, ok := m.cfg.Folders()[id]; !ok || folder.Invalid != err.Error() {
+		panic("Unable to set folder \"" + id + "\" error.")
+	}
+
+	return err.Error()
 }
 
 func (m *Model) String() string {

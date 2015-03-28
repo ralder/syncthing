@@ -40,6 +40,12 @@ func (s *roFolder) Serve() {
 	timer := time.NewTimer(time.Millisecond)
 	defer timer.Stop()
 
+	reschedule := func() {
+		// Sleep a random time between 3/4 and 5/4 of the configured interval.
+		sleepNanos := (s.intv.Nanoseconds()*3 + rand.Int63n(2*s.intv.Nanoseconds())) / 4
+		timer.Reset(time.Duration(sleepNanos) * time.Nanosecond)
+	}
+
 	initialScanCompleted := false
 	for {
 		select {
@@ -47,16 +53,24 @@ func (s *roFolder) Serve() {
 			return
 
 		case <-timer.C:
+			if err := s.model.FolderError(s.folder); err != "" {
+				l.Infoln("Skipping folder", s.folder, "scan due to folder error:", err)
+				reschedule()
+				continue
+			}
+
 			if debug {
 				l.Debugln(s, "rescan")
 			}
 
-			s.setState(FolderScanning)
 			if err := s.model.ScanFolder(s.folder); err != nil {
-				s.model.cfg.InvalidateFolder(s.folder, err.Error())
-				return
+				// Potentially sets the error twice, once in the scanner just
+				// by doing a check, and once here, if the error returned is
+				// the same one as returned by FolderError.
+				s.model.cfg.SetFolderError(s.folder, err.Error())
+				reschedule()
+				continue
 			}
-			s.setState(FolderIdle)
 
 			if !initialScanCompleted {
 				l.Infoln("Completed initial scan (ro) of folder", s.folder)
@@ -67,9 +81,7 @@ func (s *roFolder) Serve() {
 				return
 			}
 
-			// Sleep a random time between 3/4 and 5/4 of the configured interval.
-			sleepNanos := (s.intv.Nanoseconds()*3 + rand.Int63n(2*s.intv.Nanoseconds())) / 4
-			timer.Reset(time.Duration(sleepNanos) * time.Nanosecond)
+			reschedule()
 		}
 	}
 }
