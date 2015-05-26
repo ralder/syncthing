@@ -525,38 +525,6 @@ angular.module('syncthing.core')
             return '' + $scope.model[folderCfg.id].state;
         };
 
-        $scope.folderClass = function (folderCfg) {
-            if (typeof $scope.model[folderCfg.id] === 'undefined') {
-                // Unknown
-                return 'info';
-            }
-
-            if (folderCfg.devices.length <= 1) {
-                // Unshared
-                return 'warning';
-            }
-
-            if ($scope.model[folderCfg.id].invalid !== '') {
-                // Errored
-                return 'danger';
-            }
-
-            var state = '' + $scope.model[folderCfg.id].state;
-            if (state == 'idle') {
-                return 'success';
-            }
-            if (state == 'syncing') {
-                return 'primary';
-            }
-            if (state == 'scanning') {
-                return 'primary';
-            }
-            if (state == 'error') {
-                return 'danger';
-            }
-            return 'info';
-        };
-
         $scope.syncPercentage = function (folder) {
             if (typeof $scope.model[folder] === 'undefined') {
                 return 100;
@@ -596,24 +564,6 @@ angular.module('syncthing.core')
 
             // Disconnected
             return 'disconnected';
-        };
-
-        $scope.deviceClass = function (deviceCfg) {
-            if ($scope.deviceFolders(deviceCfg).length === 0) {
-                // Unused
-                return 'warning';
-            }
-
-            if ($scope.connections[deviceCfg.deviceID]) {
-                if ($scope.completion[deviceCfg.deviceID] && $scope.completion[deviceCfg.deviceID]._total === 100) {
-                    return 'success';
-                } else {
-                    return 'primary';
-                }
-            }
-
-            // Disconnected
-            return 'info';
         };
 
         $scope.deviceAddr = function (deviceCfg) {
